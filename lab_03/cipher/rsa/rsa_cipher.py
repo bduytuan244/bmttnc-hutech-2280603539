@@ -7,7 +7,6 @@ import os
 
 class RSACipher:
     def __init__(self):
-        # Tạo thư mục keys nếu chưa có để tránh lỗi
         if not os.path.exists('keys'):
             os.makedirs('keys')
 
@@ -16,7 +15,6 @@ class RSACipher:
         private_key = key.export_key()
         public_key = key.publickey().export_key()
         
-        # Lưu key vào file
         with open('keys/private.pem', 'wb') as f:
             f.write(private_key)
         with open('keys/public.pem', 'wb') as f:
