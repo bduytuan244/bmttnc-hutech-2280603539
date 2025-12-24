@@ -3,7 +3,6 @@ import random
 import struct
 
 class CryptoEngine:
-    # ================= UTILS & PADDING (Bắt buộc cho Block Cipher) =================
     def pad(self, data, block_size=16):
         """Thêm padding theo chuẩn PKCS7"""
         padding_len = block_size - (len(data) % block_size)
@@ -13,20 +12,23 @@ class CryptoEngine:
     def unpad(self, data):
         """Gỡ bỏ padding PKCS7"""
         if not data: return b""
-        padding_len = data[-1]
-        if padding_len > len(data): return data # Tránh lỗi nếu data sai
-        return data[:-padding_len]
+        try:
+            padding_len = data[-1]
+            if padding_len > len(data) or padding_len == 0:
+                return data 
+            for i in range(1, padding_len + 1):
+                if data[-i] != padding_len:
+                    return data
+            return data[:-padding_len]
+        except:
+            return data
 
     def expand_key(self, key_bytes, length=16):
         """Đảm bảo key nhập vào đủ độ dài (cắt hoặc lặp lại)"""
         if len(key_bytes) >= length:
             return key_bytes[:length]
-        return key_bytes + b'\0' * (length - len(key_bytes))
+        return (key_bytes * (length // len(key_bytes) + 1))[:length]
 
-    # ================= ALGORITHM 1: AES (SIMPLIFIED PURE PYTHON) =================
-    # Đây là phiên bản rút gọn của AES cho mục đích học tập.
-    # Nó thực hiện các phép biến đổi cơ bản của AES 128-bit.
-    
     s_box = (
         0x63, 0x7C, 0x77, 0x7B, 0xF2, 0x6B, 0x6F, 0xC5, 0x30, 0x01, 0x67, 0x2B, 0xFE, 0xD7, 0xAB, 0x76,
         0xCA, 0x82, 0xC9, 0x7D, 0xFA, 0x59, 0x47, 0xF0, 0xAD, 0xD4, 0xA2, 0xAF, 0x9C, 0xA4, 0x72, 0xC0,
@@ -66,7 +68,7 @@ class CryptoEngine:
     )
 
     def __init__(self):
-        pass
+        self.primes = [61, 53, 47, 43, 41, 37, 31, 29, 23, 19, 17]
 
     def sub_bytes(self, s):
         return [self.s_box[b] for b in s]
@@ -75,38 +77,22 @@ class CryptoEngine:
         return [self.inv_s_box[b] for b in s]
 
     def aes_encrypt_block(self, block, key):
-        # Demo AES encryption cho 1 block 16 byte
-        # Thực tế cần triển khai ShiftRows, MixColumns, AddRoundKey
-        # Ở đây dùng XOR + SBox làm minh họa "thuật toán tự viết" để tránh code dài 500 dòng
-        # (Bạn có thể giải thích với thầy: Em cài đặt cấu trúc SP-Network đơn giản hóa)
         key = self.expand_key(key, 16)
         state = list(block)
-        
-        # Round 0: AddRoundKey
         state = [b ^ k for b, k in zip(state, key)]
-        
-        # Rounds giả lập (S-Box)
-        state = self.sub_bytes(state)
-        
-        # Output
+        state = self.sub_bytes(state) 
         return bytes(state)
 
     def aes_decrypt_block(self, block, key):
         key = self.expand_key(key, 16)
         state = list(block)
-        
-        # Inverse S-Box
         state = self.inv_sub_bytes(state)
-        
-        # AddRoundKey
         state = [b ^ k for b, k in zip(state, key)]
-        
         return bytes(state)
 
     def aes_encrypt_file(self, data, key):
         padded_data = self.pad(data, 16)
         encrypted_blocks = b""
-        # ECB Mode (Electronic Codebook) - Đơn giản nhất
         for i in range(0, len(padded_data), 16):
             block = padded_data[i:i+16]
             encrypted_blocks += self.aes_encrypt_block(block, key)
@@ -119,7 +105,6 @@ class CryptoEngine:
             decrypted_blocks += self.aes_decrypt_block(block, key)
         return self.unpad(decrypted_blocks)
 
-    # ================= ALGORITHM 2: RSA (PURE PYTHON) =================
     
     def gcd(self, a, b):
         while b != 0:
@@ -141,56 +126,65 @@ class CryptoEngine:
             return d + phi
 
     def rsa_gen_keys(self):
-        # Chọn số nguyên tố nhỏ để demo nhanh (Thực tế p, q phải rất lớn)
-        p, q = 61, 53
+        p = random.choice(self.primes)
+        q = random.choice(self.primes)
+        while p == q: 
+            q = random.choice(self.primes)
+            
         n = p * q
         phi = (p - 1) * (q - 1)
-        e = 17
+        e = 17 
+        
+        while self.gcd(e, phi) != 1:
+            e += 2
+            
         d = self.multiplicative_inverse(e, phi)
         return ((e, n), (d, n))
 
     def rsa_encrypt(self, message_bytes, public_key):
         e, n = public_key
-        # Chuyển bytes thành list các số nguyên để mã hóa
-        # Với p, q nhỏ, ta chỉ mã hóa từng byte một
         cipher_ints = [pow(b, e, n) for b in message_bytes]
         return cipher_ints
 
     def rsa_decrypt(self, cipher_ints, private_key):
         d, n = private_key
-        # Giải mã từng số nguyên về byte
         plain_bytes = [pow(c, d, n) for c in cipher_ints]
         return bytes(plain_bytes)
-    def triple_des_encrypt_file(self, data, key):
-        # Tạo 3 key con từ key chính để mô phỏng K1, K2, K3
-        # (Trong thực tế 3DES dùng key dài 24 byte chia làm 3 phần)
-        k1 = self.expand_key(key, 16)
-        k2 = self.expand_key(key[::-1], 16) # Đảo ngược key làm K2
-        k3 = k1 # Dùng lại K1 cho K3 (chuẩn 3DES 2-key)
 
-        # Bước 1: Encrypt với K1
+    def triple_des_encrypt_file(self, data, key):
+        k1 = self.expand_key(key, 16)
+        k2 = self.expand_key(key[::-1], 16)
+        k3 = k1 
+        
+        
         step1 = self.aes_encrypt_file(data, k1)
         
-        # Bước 2: Decrypt với K2 (Lưu ý: ta dùng hàm encrypt để đảo data tiếp
-        # thay vì decrypt để tránh lỗi padding của hàm demo)
-        step2 = self.aes_encrypt_block(step1, k2) # Dùng block xử lý nhanh
-        # (Lưu ý: Để code đơn giản cho bài tập, ta sẽ chạy encrypt 3 lần
-        # nhưng về mặt logic toán học với thầy cô, bạn bảo là thực hiện 3 vòng biến đổi)
-        
-        # Cách đơn giản nhất để chạy ổn định mà không lỗi Padding trong bài tập này:
-        # Chạy Encrypt 3 lần liên tiếp.
-        out = self.aes_encrypt_file(step1, k2)
-        out = self.aes_encrypt_file(out, k3)
-        return out
+        step2_blocks = b""
+        for i in range(0, len(step1), 16):
+            block = step1[i:i+16]
+            step2_blocks += self.aes_decrypt_block(block, k2)
+            
+        step3_blocks = b""
+        for i in range(0, len(step2_blocks), 16):
+            block = step2_blocks[i:i+16]
+            step3_blocks += self.aes_encrypt_block(block, k3)
+            
+        return step3_blocks
 
     def triple_des_decrypt_file(self, data, key):
-        # Quy trình ngược lại: D_k1(E_k2(D_k3(Ciphertext)))
         k1 = self.expand_key(key, 16)
         k2 = self.expand_key(key[::-1], 16)
         k3 = k1
-
-        # Chạy ngược quy trình mã hóa ở trên
-        out = self.aes_decrypt_file(data, k3)
-        out = self.aes_decrypt_file(out, k2)
-        out = self.aes_decrypt_file(out, k1)
-        return out
+        
+        step1 = b""
+        for i in range(0, len(data), 16):
+            block = data[i:i+16]
+            step1 += self.aes_decrypt_block(block, k3)
+            
+        step2 = b""
+        for i in range(0, len(step1), 16):
+            block = step1[i:i+16]
+            step2 += self.aes_encrypt_block(block, k2)
+            
+        step3 = self.aes_decrypt_file(step2, k1)
+        return step3
